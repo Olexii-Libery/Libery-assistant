@@ -812,10 +812,11 @@
     </div>
 
     <div class="quick-row">
-      <button class="chip" onclick="quickCmd('Що зараз є в стратегічному документі?')">📋 Огляд</button>
-      <button class="chip" onclick="quickCmd('Додай новий розділ')">✍️ Новий розділ</button>
-      <button class="chip" onclick="quickCmd('Збережи поточну версію документу')">📌 Зберегти версію</button>
-      <button class="chip" onclick="quickCmd('Які наступні кроки для реєстрації GmbH?')">🏢 GmbH кроки</button>
+      <button class="chip" onclick="quickCmd('Что сейчас есть в стратегическом документе?')">📋 Огляд</button>
+      <button class="chip" onclick="quickCmd('Добавь новый раздел')">✍️ Розділ</button>
+      <button class="chip" onclick="quickCmd('Сохрани версию документа')">📌 Версія</button>
+      <button class="chip" onclick="quickCmd('Какие следующие шаги для регистрации GmbH?')">🏢 GmbH</button>
+      <button class="chip" onclick="clearHistory()">🔄 Нова розмова</button>
     </div>
 
   </div>
@@ -886,15 +887,21 @@
 
     <div class="field">
       <label>Контекст для AI (системний промт)</label>
-      <textarea id="set-prompt" rows="5" style="font-size:12px;line-height:1.6">Ти — дружній помічник клубу книжних авторів Libery. Допомагаєш формувати стратегію відкриття Libery GmbH.
+      <textarea id="set-prompt" rows="5" style="font-size:12px;line-height:1.6">Ты — опытный бизнес-консультант и стратегический помощник проекта Libery.
 
-МОВА: Відповідай ТІЄЮ САМОЮ мовою якою говорить людина. Якщо по-російськи — відповідай по-російськи. Якщо по-українськи — по-українськи. Не перемикайся на іншу мову самостійно.
+РОЛЬ 1 — БИЗНЕС-КОНСУЛЬТАНТ ПО ШВЕЙЦАРИИ: Знаешь требования швейцарского законодательства для открытия GmbH: уставной капитал, кантональные особенности, налоги, бухгалтерия, разрешения, статус иностранных основателей. Помогаешь пройти путь от идеи до работающей компании с нуля. Если видишь юридическую или финансовую ошибку — говоришь прямо.
 
-ТОН: Завжди ввічливий, дружній, без лайки і нецензурних слів. Навіть якщо співрозмовник використовує міцні слова — ти відповідаєш спокійно і ввічливо. Ніколи не повторюй нецензурні слова.
+РОЛЬ 2 — СТРАТЕГ И КРИТИК: Анализируешь рынок, конкурентов, ниши. Ищешь где есть реальные деньги. Критикуешь заведомо неудачные решения честно и конкретно. Если идея слабая — говоришь почему и предлагаешь лучше.
 
-ФОРМАТ ВІДПОВІДІ: Пиши простим текстом без зірочок **bold**, без решіток ### і без технічних символів. Коротко і по суті.
+КОНТЕКСТ: Libery — платформа для создания персональных книг с AI. Три уровня: ателье в Тургау, онлайн-портал, клуб авторов. Регистрация GmbH ещё не состоялась. Стадия: сбор информации и выбор стратегии.
 
-ДІЇ З ДОКУМЕНТОМ: Коли треба змінити документ — повертай JSON в кінці відповіді: {"action":"append","content":"текст"} або {"action":"replace","content":"текст"} або {"action":"show"}. Сам JSON не зачитуй вголос.</textarea>
+ЯЗЫК: Отвечай на том же языке на котором говорит человек. Русский вопрос — русский ответ. Украинский вопрос — украинский ответ. Это абсолютное правило.
+
+ТОН: Вежливый но прямой. Никогда не используй нецензурные слова.
+
+ФОРМАТ: Только обычный текст. Без звёздочек, без решёток, без markdown. Списки — через тире.
+
+ДОКУМЕНТ: Когда нужно изменить документ — JSON в конце ответа: {"action":"append","content":"текст"} или {"action":"replace","content":"текст"} или {"action":"show"}.</textarea>
     </div>
 
     <div class="modal-actions">
@@ -913,7 +920,8 @@ const S = {
   apiKey: '', docId: '', lang: 'uk-UA', prompt: '',
   doc: '', listening: false, processing: false,
   recognition: null, versions: [],
-  ttsOn: true, speaking: false
+  ttsOn: true, speaking: false,
+  history: []  // conversation history [{role, content}]
 };
 
 // ── TTS ──
@@ -932,25 +940,58 @@ function cleanForSpeech(text) {
     .trim();
 }
 
+function detectLang(text) {
+  // Ukrainian-specific letters not in Russian
+  const ukChars = (text.match(/[іїєґІЇЄҐ]/g) || []).length;
+  // Russian-specific letters not in Ukrainian  
+  const ruChars = (text.match(/[ыъэёЫЪЭЁ]/g) || []).length;
+  if (ukChars > ruChars) return 'uk-UA';
+  if (ruChars > ukChars) return 'ru-RU';
+  return S.lang; // fallback to user setting
+}
+
+function getBestVoice(langCode) {
+  // Wait for voices to load
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  // Prefer: exact lang match + local, then exact match, then starts with
+  return voices.find(v => v.lang === (langCode === 'ru' ? 'ru-RU' : 'uk-UA') && v.localService)
+      || voices.find(v => v.lang === (langCode === 'ru' ? 'ru-RU' : 'uk-UA'))
+      || voices.find(v => v.lang.startsWith(langCode) && v.localService)
+      || voices.find(v => v.lang.startsWith(langCode))
+      || null;
+}
+
 function speak(text) {
   if (!S.ttsOn || !text) return;
   window.speechSynthesis.cancel();
   const clean = cleanForSpeech(text);
-  if (!clean) return;
+  if (!clean || clean.length < 3) return;
+
+  // Auto-detect language of the response text
+  const detectedLang = detectLang(clean);
+  const langCode = detectedLang === 'uk-UA' ? 'uk' : 'ru';
+
   const utt = new SpeechSynthesisUtterance(clean);
-  utt.lang = S.lang === 'uk-UA' ? 'uk-UA' : 'ru-RU';
-  utt.rate = 0.92;
+  utt.lang = detectedLang;
+  utt.rate = 0.9;
   utt.pitch = 1;
-  // Pick best available voice for language
-  const voices = window.speechSynthesis.getVoices();
-  const langCode = S.lang === 'uk-UA' ? 'uk' : 'ru';
-  const preferred = voices.find(v => v.lang.startsWith(langCode) && v.localService);
-  const any = voices.find(v => v.lang.startsWith(langCode));
-  if (preferred || any) utt.voice = preferred || any;
-  utt.onstart = () => { S.speaking = true; document.getElementById('tts-btn').classList.add('speaking'); };
-  utt.onend = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
-  utt.onerror = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
-  window.speechSynthesis.speak(utt);
+
+  // Try to get voice, retry after voices load if empty
+  const trySpeak = () => {
+    const voice = getBestVoice(langCode);
+    if (voice) utt.voice = voice;
+    utt.onstart = () => { S.speaking = true; document.getElementById('tts-btn').classList.add('speaking'); };
+    utt.onend   = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
+    utt.onerror = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
+    window.speechSynthesis.speak(utt);
+  };
+
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = () => { trySpeak(); };
+  } else {
+    trySpeak();
+  }
 }
 
 function toggleTts() {
@@ -1065,6 +1106,17 @@ async function handleVoice(text) {
   S.processing = true;
   setAi('<span class="spinner"></span> Думаю...');
 
+  // Build user message — first message includes doc context
+  const userMsg = S.history.length === 0
+    ? `Документ Libery:\n\n${S.doc || '(порожній)'}\n\n---\n${text}`
+    : text;
+
+  // Add to history
+  S.history.push({ role: 'user', content: userMsg });
+
+  // Keep last 20 messages to avoid token overflow
+  if (S.history.length > 20) S.history = S.history.slice(-20);
+
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -1077,17 +1129,17 @@ async function handleVoice(text) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
-        system: S.prompt,
-        messages: [{
-          role: 'user',
-          content: `Поточний вміст стратегічного документу Libery:\n\n${S.doc || '(документ ще порожній)'}\n\n---\nКоманда: ${text}`
-        }]
+        system: S.prompt + `\n\nТекущее состояние документа Libery:\n${S.doc || '(пусто)'}`,
+        messages: S.history
       })
     });
 
     if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'API помилка'); }
     const data = await res.json();
     const reply = data.content[0].text;
+
+    // Save assistant reply to history
+    S.history.push({ role: 'assistant', content: reply });
 
     const match = reply.match(/\{[\s\S]*?"action"[\s\S]*?\}/);
     if (match) {
@@ -1104,10 +1156,17 @@ async function handleVoice(text) {
       speak(reply);
     }
   } catch(err) {
+    // Remove failed user message from history
+    S.history.pop();
     setAi('⚠️ ' + err.message);
     showToast('Помилка API', 'error');
   }
   S.processing = false;
+}
+
+function clearHistory() {
+  S.history = [];
+  showToast('🔄 Розмову скинуто');
 }
 
 function applyAction(a) {
