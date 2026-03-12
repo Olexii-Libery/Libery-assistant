@@ -899,7 +899,7 @@
 
 ТОН: Вежливый но прямой. Никогда не используй нецензурные слова.
 
-ФОРМАТ: Только обычный текст. Без звёздочек, без решёток, без markdown. Списки — через тире.
+ФОРМАТ: Только обычный текст. Без звёздочек, без решёток, без markdown. Списки — через тире. Числа пиши только цифрами, без перевода в скобках на другой язык — не надо писать "70 (сімдесят)".
 
 ДОКУМЕНТ: Когда нужно изменить документ — JSON в конце ответа: {"action":"append","content":"текст"} или {"action":"replace","content":"текст"} или {"action":"show"}.</textarea>
     </div>
@@ -940,46 +940,35 @@ function cleanForSpeech(text) {
     .trim();
 }
 
-function detectLang(text) {
-  // Ukrainian-specific letters not in Russian
-  const ukChars = (text.match(/[іїєґІЇЄҐ]/g) || []).length;
-  // Russian-specific letters not in Ukrainian  
-  const ruChars = (text.match(/[ыъэёЫЪЭЁ]/g) || []).length;
-  if (ukChars > ruChars) return 'uk-UA';
-  if (ruChars > ukChars) return 'ru-RU';
-  return S.lang; // fallback to user setting
-}
-
-function getBestVoice(langCode) {
-  // Wait for voices to load
+function getBestVoice(lang) {
   const voices = window.speechSynthesis.getVoices();
   if (!voices.length) return null;
-  // Prefer: exact lang match + local, then exact match, then starts with
-  return voices.find(v => v.lang === (langCode === 'ru' ? 'ru-RU' : 'uk-UA') && v.localService)
-      || voices.find(v => v.lang === (langCode === 'ru' ? 'ru-RU' : 'uk-UA'))
-      || voices.find(v => v.lang.startsWith(langCode) && v.localService)
-      || voices.find(v => v.lang.startsWith(langCode))
+  return voices.find(v => v.lang === lang && v.localService)
+      || voices.find(v => v.lang === lang)
+      || voices.find(v => v.lang.startsWith(lang.split('-')[0]) && v.localService)
+      || voices.find(v => v.lang.startsWith(lang.split('-')[0]))
       || null;
 }
 
 function speak(text) {
   if (!S.ttsOn || !text) return;
   window.speechSynthesis.cancel();
-  const clean = cleanForSpeech(text);
+
+  // Strip Ukrainian number words from Russian text to avoid mixed reading
+  let clean = cleanForSpeech(text);
   if (!clean || clean.length < 3) return;
 
-  // Auto-detect language of the response text
-  const detectedLang = detectLang(clean);
-  const langCode = detectedLang === 'uk-UA' ? 'uk' : 'ru';
+  // Always use the language the USER selected — no auto-detection
+  // This avoids "сімдесят раков" problem with mixed-language text
+  const lang = S.lang; // 'uk-UA' or 'ru-RU'
 
   const utt = new SpeechSynthesisUtterance(clean);
-  utt.lang = detectedLang;
+  utt.lang = lang;
   utt.rate = 0.9;
   utt.pitch = 1;
 
-  // Try to get voice, retry after voices load if empty
   const trySpeak = () => {
-    const voice = getBestVoice(langCode);
+    const voice = getBestVoice(lang);
     if (voice) utt.voice = voice;
     utt.onstart = () => { S.speaking = true; document.getElementById('tts-btn').classList.add('speaking'); };
     utt.onend   = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
@@ -988,7 +977,7 @@ function speak(text) {
   };
 
   if (window.speechSynthesis.getVoices().length === 0) {
-    window.speechSynthesis.onvoiceschanged = () => { trySpeak(); };
+    window.speechSynthesis.onvoiceschanged = trySpeak;
   } else {
     trySpeak();
   }
