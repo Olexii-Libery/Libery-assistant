@@ -235,19 +235,25 @@
       text-transform: uppercase;
     }
 
-    #transcript {
+    #transcript-input {
       font-family: var(--serif);
-      font-size: 17px;
+      font-size: 16px;
       line-height: 1.7;
       color: var(--text);
+      background: transparent;
+      border: none;
+      outline: none;
+      resize: none;
+      width: 100%;
       flex: 1;
+      min-height: 70px;
+      max-height: 120px;
+      overflow-y: auto;
       font-style: italic;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
     }
-    #transcript.placeholder {
-      color: var(--text-dim);
-      font-size: 14px;
-      font-style: italic;
-    }
+    #transcript-input::placeholder { color: var(--text-dim); font-size: 13px; }
 
     /* Waveform */
     .waveform {
@@ -346,6 +352,20 @@
       letter-spacing: 1px;
     }
     .lang-toggle-inline:hover { border-color: var(--gold); color: var(--gold); }
+
+    .send-btn {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--gold-dim);
+      color: var(--gold);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .send-btn:hover { border-color: var(--gold); background: rgba(201,168,76,0.25); }
+    .send-btn:active { transform: scale(0.95); }
 
     /* AI Response */
     .ai-card {
@@ -757,8 +777,8 @@
   <div style="padding:18px 18px 14px; display:flex; flex-direction:column; gap:14px; flex:1; overflow-y:auto; scrollbar-width:thin;">
 
     <div class="transcript-card" id="transcript-card">
-      <div class="card-label">Розпізнана мова</div>
-      <div id="transcript" class="placeholder">Натисни мікрофон і говори про стратегію Libery...</div>
+      <div class="card-label">Розпізнана мова / Введи текст</div>
+      <textarea id="transcript-input" placeholder="Говори або вводь текст тут..." oninput="onTranscriptInput()" onkeydown="onTranscriptKey(event)"></textarea>
       <div class="waveform" id="waveform">
         <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
         <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
@@ -776,6 +796,11 @@
         <span class="mic-status" id="mic-label">Готовий до запису</span>
         <button class="lang-toggle-inline" id="lang-btn" onclick="toggleLang()">🇺🇦 Українська</button>
       </div>
+      <button class="send-btn" onclick="sendTyped()" title="Надіслати текст">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+          <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+        </svg>
+      </button>
     </div>
 
     <div class="ai-card">
@@ -861,7 +886,15 @@
 
     <div class="field">
       <label>Контекст для AI (системний промт)</label>
-      <textarea id="set-prompt" rows="5" style="font-size:12px;line-height:1.6">Ти — дружній стратегічний помічник клубу книжних авторів Libery. Допомагаєш команді формувати стратегію відкриття Libery GmbH: збираєш інформацію, структуруєш кроки, записуєш нотатки. Зараз на стадії збору інформації та нарисів — реєстрації ще не було. Відповідай тою мовою, якою питають. Коли треба змінити документ — повертай JSON: {"action":"append","content":"текст"} або {"action":"replace","content":"текст"} або {"action":"show"}.</textarea>
+      <textarea id="set-prompt" rows="5" style="font-size:12px;line-height:1.6">Ти — дружній помічник клубу книжних авторів Libery. Допомагаєш формувати стратегію відкриття Libery GmbH.
+
+МОВА: Відповідай ТІЄЮ САМОЮ мовою якою говорить людина. Якщо по-російськи — відповідай по-російськи. Якщо по-українськи — по-українськи. Не перемикайся на іншу мову самостійно.
+
+ТОН: Завжди ввічливий, дружній, без лайки і нецензурних слів. Навіть якщо співрозмовник використовує міцні слова — ти відповідаєш спокійно і ввічливо. Ніколи не повторюй нецензурні слова.
+
+ФОРМАТ ВІДПОВІДІ: Пиши простим текстом без зірочок **bold**, без решіток ### і без технічних символів. Коротко і по суті.
+
+ДІЇ З ДОКУМЕНТОМ: Коли треба змінити документ — повертай JSON в кінці відповіді: {"action":"append","content":"текст"} або {"action":"replace","content":"текст"} або {"action":"show"}. Сам JSON не зачитуй вголос.</textarea>
     </div>
 
     <div class="modal-actions">
@@ -999,6 +1032,10 @@ function setupRecognition() {
     if (final) handleVoice(final.trim());
   };
 
+  S.recognition.onspeechend = () => {
+    S.recognition.stop();
+  };
+
   S.recognition.onerror = e => {
     stopListen();
     if (e.error !== 'no-speech') showToast('Помилка мікрофона: ' + e.error, 'error');
@@ -1089,6 +1126,13 @@ function actionMsg(a) {
 }
 
 function quickCmd(t) { setTranscript(t, true); handleVoice(t); }
+
+function sendTyped() {
+  const el = document.getElementById('transcript-input');
+  const text = el ? el.value.trim() : '';
+  if (!text) { showToast('Введи або надиктуй текст', 'warn'); return; }
+  handleVoice(text);
+}
 
 // ── DOCUMENT ──
 function save() { lsSet('lb_doc', S.doc); }
@@ -1225,11 +1269,27 @@ function switchTabByName(name) {
 }
 
 function setTranscript(text, final) {
-  const el = document.getElementById('transcript');
-  if (!text) { el.className='placeholder'; el.textContent='Слухаю...'; return; }
-  el.className = '';
+  const el = document.getElementById('transcript-input');
+  if (!el) return;
+  el.value = text || '';
   el.style.color = final ? 'var(--text)' : 'var(--text-dim)';
-  el.textContent = text;
+}
+
+function onTranscriptInput() {
+  // allow manual editing — nothing auto here
+}
+
+function onTranscriptKey(e) {
+  // Send on Enter (without Shift)
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const text = document.getElementById('transcript-input').value.trim();
+    if (text) handleVoice(text);
+  }
+}
+
+function getTranscriptText() {
+  return (document.getElementById('transcript-input').value || '').trim();
 }
 
 function setAi(html) { document.getElementById('ai-text').innerHTML = html; }
