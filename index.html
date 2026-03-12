@@ -354,6 +354,10 @@
       border-left: 3px solid var(--gold);
       padding: 14px 16px;
       position: relative;
+      max-height: 220px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
     }
 
     .ai-card::before {
@@ -750,7 +754,7 @@
 
 <!-- ══ VOICE PANEL ══ -->
 <div id="panel-voice" class="panel">
-  <div style="padding:18px 18px 0; display:flex; flex-direction:column; gap:14px; flex:1; overflow:hidden;">
+  <div style="padding:18px 18px 14px; display:flex; flex-direction:column; gap:14px; flex:1; overflow-y:auto; scrollbar-width:thin;">
 
     <div class="transcript-card" id="transcript-card">
       <div class="card-label">Розпізнана мова</div>
@@ -880,20 +884,36 @@ const S = {
 };
 
 // ── TTS ──
+function cleanForSpeech(text) {
+  return text
+    .replace(/<[^>]*>/g, '')
+    .replace(/###?\s*/g, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .replace(/`[^`]+`/g, '')
+    .replace(/—/g, ', ')
+    .replace(/\[|\]|\{|\}|\|\/\//g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function speak(text) {
   if (!S.ttsOn || !text) return;
   window.speechSynthesis.cancel();
-  const clean = text.replace(/<[^>]*>/g, '').replace(/[{"}\[\]]/g, '').trim();
+  const clean = cleanForSpeech(text);
   if (!clean) return;
   const utt = new SpeechSynthesisUtterance(clean);
   utt.lang = S.lang === 'uk-UA' ? 'uk-UA' : 'ru-RU';
-  utt.rate = 0.95;
+  utt.rate = 0.92;
   utt.pitch = 1;
-  // Pick best voice
+  // Pick best available voice for language
   const voices = window.speechSynthesis.getVoices();
-  const preferred = voices.find(v => v.lang.startsWith(S.lang === 'uk-UA' ? 'uk' : 'ru') && v.localService);
-  const fallback = voices.find(v => v.lang.startsWith(S.lang === 'uk-UA' ? 'uk' : 'ru'));
-  if (preferred || fallback) utt.voice = preferred || fallback;
+  const langCode = S.lang === 'uk-UA' ? 'uk' : 'ru';
+  const preferred = voices.find(v => v.lang.startsWith(langCode) && v.localService);
+  const any = voices.find(v => v.lang.startsWith(langCode));
+  if (preferred || any) utt.voice = preferred || any;
   utt.onstart = () => { S.speaking = true; document.getElementById('tts-btn').classList.add('speaking'); };
   utt.onend = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
   utt.onerror = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
@@ -916,14 +936,25 @@ function stopSpeaking() {
   if (btn) btn.classList.remove('speaking');
 }
 
+// ── STORAGE HELPERS (localStorage + sessionStorage backup for mobile) ──
+function lsSet(key, val) {
+  try { localStorage.setItem(key, val); } catch(e) {}
+  try { sessionStorage.setItem(key, val); } catch(e) {}
+}
+function lsGet(key) {
+  try { const v = localStorage.getItem(key); if (v !== null) return v; } catch(e) {}
+  try { return sessionStorage.getItem(key); } catch(e) {}
+  return null;
+}
+
 // ── INIT ──
 function init() {
-  S.apiKey   = localStorage.getItem('lb_key') || '';
-  S.docId    = localStorage.getItem('lb_did') || '';
-  S.lang     = localStorage.getItem('lb_lng') || 'uk-UA';
-  S.prompt   = localStorage.getItem('lb_pmt') || document.getElementById('set-prompt').value;
-  S.doc      = localStorage.getItem('lb_doc') || '';
-  S.versions = JSON.parse(localStorage.getItem('lb_ver') || '[]');
+  S.apiKey   = lsGet('lb_key') || '';
+  S.docId    = lsGet('lb_did') || '';
+  S.lang     = lsGet('lb_lng') || 'uk-UA';
+  S.prompt   = lsGet('lb_pmt') || document.getElementById('set-prompt').value;
+  S.doc      = lsGet('lb_doc') || '';
+  S.versions = JSON.parse(lsGet('lb_ver') || '[]');
 
   setupRecognition();
   updateLangBtn();
@@ -1060,7 +1091,7 @@ function actionMsg(a) {
 function quickCmd(t) { setTranscript(t, true); handleVoice(t); }
 
 // ── DOCUMENT ──
-function save() { localStorage.setItem('lb_doc', S.doc); }
+function save() { lsSet('lb_doc', S.doc); }
 
 function showEditor() {
   const ph = document.getElementById('doc-empty');
@@ -1092,7 +1123,7 @@ function saveVersion() {
   const v = { id: Date.now(), date: new Date().toLocaleString('uk-UA'), content: S.doc, preview: S.doc.slice(0, 120) };
   S.versions.unshift(v);
   if (S.versions.length > 30) S.versions.pop();
-  localStorage.setItem('lb_ver', JSON.stringify(S.versions));
+  lsSet('lb_ver', JSON.stringify(S.versions));
   renderHistory();
   showToast('📌 Версію збережено');
 }
@@ -1151,10 +1182,10 @@ function saveSettings() {
   S.docId  = document.getElementById('set-docid').value.trim();
   S.lang   = document.getElementById('set-lang').value;
   S.prompt = document.getElementById('set-prompt').value.trim();
-  localStorage.setItem('lb_key', S.apiKey);
-  localStorage.setItem('lb_did', S.docId);
-  localStorage.setItem('lb_lng', S.lang);
-  localStorage.setItem('lb_pmt', S.prompt);
+  lsSet('lb_key', S.apiKey);
+  lsSet('lb_did', S.docId);
+  lsSet('lb_lng', S.lang);
+  lsSet('lb_pmt', S.prompt);
   if (S.recognition) S.recognition.lang = S.lang;
   updateLangBtn();
   closeSettings();
