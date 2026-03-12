@@ -1,0 +1,20 @@
+{
+  "name": "Libery — Стратегічний Помічник",
+  "short_name": "Libery",
+  "description": "Голосовий AI помічник для стратегії Libery GmbH",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a2535",
+  "theme_color": "#1a2535",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity"],
+  "lang": "uk"
+}

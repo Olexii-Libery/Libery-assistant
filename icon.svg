@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" fill="#1a2535"/>
+  <rect x="8" y="8" width="176" height="176" fill="none" stroke="#c9a84c" stroke-width="1" opacity="0.3"/>
+  <!-- Book -->
+  <path d="M48 60 L48 140 Q96 128 96 128 Q96 128 144 140 L144 60 Q96 48 96 48 Q96 48 48 60Z" fill="rgba(201,168,76,0.08)" stroke="#c9a84c" stroke-width="1.5"/>
+  <line x1="96" y1="48" x2="96" y2="128" stroke="#c9a84c" stroke-width="1"/>
+  <!-- Feather -->
+  <path d="M110 30 C130 25 150 35 148 55 C146 70 130 75 118 72 C106 68 104 55 110 30Z" fill="rgba(201,168,76,0.12)" stroke="#c9a84c" stroke-width="1.5"/>
+  <line x1="118" y1="30" x2="112" y2="72" stroke="#c9a84c" stroke-width="1" stroke-dasharray="2 3"/>
+  <line x1="112" y1="72" x2="108" y2="82" stroke="#c9a84c" stroke-width="1.5"/>
+  <!-- Name -->
+  <text x="96" y="168" text-anchor="middle" fill="#c9a84c" font-family="serif" font-size="18" letter-spacing="5">LIBERY</text>
+</svg>
