@@ -682,6 +682,35 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .ai-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .ai-card-label {
+      font-family: var(--display);
+      font-size: 8px;
+      letter-spacing: 3px;
+      color: var(--gold);
+      text-transform: uppercase;
+      opacity: 0.7;
+    }
+    .tts-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 14px;
+      border-radius: 50%;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .tts-btn:hover { border-color: var(--gold); color: var(--gold); }
+    .tts-btn.speaking { border-color: var(--gold); color: var(--gold); background: var(--gold-dim); animation: glow 0.8s infinite; }
+    .tts-btn.off { opacity: 0.35; }
   </style>
 </head>
 <body>
@@ -746,7 +775,11 @@
     </div>
 
     <div class="ai-card">
-      <div id="ai-text">Привіт! 👋 Я твій помічник для стратегії Libery. Розкажи голосом що додати або запитай що вже є в документі — і я допоможу.</div>
+      <div class="ai-card-header">
+        <span class="ai-card-label">Libery AI</span>
+        <button class="tts-btn" id="tts-btn" onclick="toggleTts()" title="Увімк/вимк озвучення">🔊</button>
+      </div>
+      <div id="ai-text">Привіт! 👋 Я твій помічник для стратегії Libery. Натисни 🔊 щоб я відповідав голосом. Розкажи що додати до стратегії — і я допоможу.</div>
     </div>
 
     <div class="quick-row">
@@ -842,8 +875,46 @@
 const S = {
   apiKey: '', docId: '', lang: 'uk-UA', prompt: '',
   doc: '', listening: false, processing: false,
-  recognition: null, versions: []
+  recognition: null, versions: [],
+  ttsOn: true, speaking: false
 };
+
+// ── TTS ──
+function speak(text) {
+  if (!S.ttsOn || !text) return;
+  window.speechSynthesis.cancel();
+  const clean = text.replace(/<[^>]*>/g, '').replace(/[{"}\[\]]/g, '').trim();
+  if (!clean) return;
+  const utt = new SpeechSynthesisUtterance(clean);
+  utt.lang = S.lang === 'uk-UA' ? 'uk-UA' : 'ru-RU';
+  utt.rate = 0.95;
+  utt.pitch = 1;
+  // Pick best voice
+  const voices = window.speechSynthesis.getVoices();
+  const preferred = voices.find(v => v.lang.startsWith(S.lang === 'uk-UA' ? 'uk' : 'ru') && v.localService);
+  const fallback = voices.find(v => v.lang.startsWith(S.lang === 'uk-UA' ? 'uk' : 'ru'));
+  if (preferred || fallback) utt.voice = preferred || fallback;
+  utt.onstart = () => { S.speaking = true; document.getElementById('tts-btn').classList.add('speaking'); };
+  utt.onend = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
+  utt.onerror = () => { S.speaking = false; document.getElementById('tts-btn').classList.remove('speaking'); };
+  window.speechSynthesis.speak(utt);
+}
+
+function toggleTts() {
+  S.ttsOn = !S.ttsOn;
+  const btn = document.getElementById('tts-btn');
+  btn.textContent = S.ttsOn ? '🔊' : '🔇';
+  btn.classList.toggle('off', !S.ttsOn);
+  if (!S.ttsOn) window.speechSynthesis.cancel();
+  showToast(S.ttsOn ? '🔊 Озвучення увімкнено' : '🔇 Озвучення вимкнено');
+}
+
+function stopSpeaking() {
+  window.speechSynthesis.cancel();
+  S.speaking = false;
+  const btn = document.getElementById('tts-btn');
+  if (btn) btn.classList.remove('speaking');
+}
 
 // ── INIT ──
 function init() {
@@ -878,6 +949,7 @@ function setupRecognition() {
 
   S.recognition.onstart = () => {
     S.listening = true;
+    stopSpeaking();
     document.getElementById('mic-btn').classList.add('listening');
     document.getElementById('mic-label').textContent = 'Слухаю...';
     document.getElementById('waveform').classList.add('active');
@@ -955,10 +1027,13 @@ async function handleVoice(text) {
         const action = JSON.parse(match[0]);
         applyAction(action);
         const display = reply.replace(match[0], '').trim();
-        setAi(display || actionMsg(action));
-      } catch { setAi(reply); }
+        const msg = display || actionMsg(action);
+        setAi(msg);
+        speak(msg);
+      } catch { setAi(reply); speak(reply); }
     } else {
       setAi(reply);
+      speak(reply);
     }
   } catch(err) {
     setAi('⚠️ ' + err.message);
